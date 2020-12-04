@@ -23,8 +23,8 @@ sys.path.insert(0, LIB_PATH)
 
 
 project = 'LightAutoML'
-copyright = '%s, Sberbank AI Lab' % str(datetime.datetime.now().year)
-author = 'Sberbank AI Lab'
+copyright = '%s, Sber AI Lab' % str(datetime.datetime.now().year)
+author = 'Sber AI Lab'
 
 
 extensions = [
