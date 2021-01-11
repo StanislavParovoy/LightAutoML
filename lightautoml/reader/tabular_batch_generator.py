@@ -10,6 +10,8 @@ import pandas as pd
 from joblib import Parallel, delayed
 from log_calls import record_history
 from pandas import DataFrame
+import logging
+from hdfs import InsecureClient
 
 ReadableToDf = Union[str, np.ndarray, DataFrame, Dict[str, np.ndarray], 'Batch']
 
@@ -213,6 +215,22 @@ class FileBatch(Batch):
         self.read_csv_params = read_csv_params
 
 
+class HDFSBatch(Batch):
+    def __init__(self, url, path, *, reader_options=None, user=None, root=None, proxy=None, timeout=None, session=None):
+        self.client = InsecureClient(url, user=user, root=root, proxy=proxy, timeout=timeout, session=session)
+        self.path = path
+
+        if reader_options is not None and not isinstance(reader_options, dict):
+            logging.warning(f'Invalid type for reader_options: expecting dict, got {type(reader_options)}')
+            reader_options = {}
+
+        self.reader_options = reader_options or {}
+
+    @property
+    def data(self) -> DataFrame:
+        with self.client.read(self.path, **self.reader_options) as reader:
+            return reader.read(self.path)
+
 @record_history(enabled=False)
 class BatchGenerator:
     """
@@ -308,7 +326,7 @@ class FileBatchGenerator(BatchGenerator):
 
 @record_history(enabled=False)
 def read_data(data: ReadableToDf, features_names: Optional[Sequence[str]] = None, n_jobs: int = 1,
-              read_csv_params: Optional[dict] = None) -> Tuple[DataFrame, Optional[dict]]:
+              read_csv_params: Optional[dict] = None, **kwargs) -> Tuple[DataFrame, Optional[dict]]:
     """Get pd.DataFrame from different data formats
 
     Args:
@@ -321,7 +339,7 @@ def read_data(data: ReadableToDf, features_names: Optional[Sequence[str]] = None
         features_names: Optional features names if np.ndarray
         n_jobs: number of processes to read file
         read_csv_params: params to read csv file
-
+        kwargs: extra parameters for other readers such as HdfsClient
     Returns:
 
     """
@@ -359,7 +377,14 @@ def read_data(data: ReadableToDf, features_names: Optional[Sequence[str]] = None
 
         if data.endswith('.parquet'):
             return pd.read_parquet(data, columns=read_csv_params['usecols']), None
-
+        if data.startswith('hdfs://'):
+            client = InsecureClient(**kwargs['client_options'])
+            with client.read(data, **kwargs.get('reader_options', {})) as reader:
+                if data.lower().endswith('.parquet'):
+                    return pd.read_parquet(reader, columns=read_csv_params['usecols']), None
+                if data.lower().endswith('.csv'):
+                    return pd.read_csv(reader, columns=read_csv_params['usecols']), None
+                raise NotImplementedError('Only CSV and Parquet are currently implemented')
         else:
             return read_csv(data, n_jobs, **read_csv_params), None
 
@@ -368,7 +393,7 @@ def read_data(data: ReadableToDf, features_names: Optional[Sequence[str]] = None
 
 @record_history(enabled=False)
 def read_batch(data: ReadableToDf, features_names: Optional[Sequence[str]] = None, n_jobs: int = 1,
-               batch_size: Optional[int] = None, read_csv_params: Optional[dict] = None) -> Iterable:
+               batch_size: Optional[int] = None, read_csv_params: Optional[dict] = None, **kwargs) -> Iterable:
     """Read data for inference by batches for simple tabular data
 
     Args:
@@ -380,6 +405,7 @@ def read_batch(data: ReadableToDf, features_names: Optional[Sequence[str]] = Non
         n_jobs: number of processes to read file and split data by batch if batch_size is None.
         batch_size: batch size.
         read_csv_params: params to read csv file.
+        kwargs: extra parameters for other readers such as HdfsClient
 
     Returns:
         BatchGenerator.
@@ -398,7 +424,9 @@ def read_batch(data: ReadableToDf, features_names: Optional[Sequence[str]] = Non
     if isinstance(data, str):
         if not (data.endswith('.feather') or data.endswith('.parquet')):
             return FileBatchGenerator(data, n_jobs, batch_size, read_csv_params)  # read_csv(data, n_jobs, **read_csv_params)
-
+        elif data.startswith('hdfs://'):
+            data, _ = read_data(data, features_names, n_jobs, read_csv_params, **kwargs)
+            return DfBatchGenerator(data, n_jobs=n_jobs, batch_size=batch_size)
         else:
             data, _ = read_data(data, features_names, n_jobs, read_csv_params)
             return DfBatchGenerator(data, n_jobs=n_jobs, batch_size=batch_size)
