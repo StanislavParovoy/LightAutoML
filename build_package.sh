@@ -5,6 +5,7 @@ source ./lama_venv/bin/activate
 
 pip install -U pip
 pip install -U poetry
+pip install -U matplotlib
 
 poetry lock
 poetry install
