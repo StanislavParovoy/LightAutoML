@@ -7,5 +7,5 @@ pip install -U pip
 pip install -U poetry
 
 poetry lock
-poetry install --no-dev
+poetry install
 poetry build
