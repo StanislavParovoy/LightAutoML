@@ -226,6 +226,7 @@ def torch_mape(y_true: torch.Tensor, y_pred: torch.Tensor, sample_weight: Option
 _torch_loss_dict = {
 
     'mse': (nn.MSELoss, False, False),
+    'rmse': (nn.MSELoss, False, False),
     'mae': (nn.L1Loss, False, False),
     'logloss': (nn.BCELoss, False, False),
     'crossentropy': (nn.CrossEntropyLoss, True, True),

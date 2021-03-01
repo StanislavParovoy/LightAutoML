@@ -28,6 +28,7 @@ _lgb_binary_metrics_dict = {
 
 _lgb_reg_metrics_dict = {
     'mse': 'mse',
+    'rmse': 'rmse',
     'mae': 'mae',
     'r2': 'mse',
     'rmsle': 'mse',
@@ -59,6 +60,7 @@ _lgb_loss_mapping = {
 
     'logloss': ('binary', None, None),
     'mse': ('regression', None, None),
+    'rmse': ('regression', None, None),
     'mae': ('l1', None, None),
     'mape': ('mape', None, None),
     'crossentropy': ('multiclass', None, None),

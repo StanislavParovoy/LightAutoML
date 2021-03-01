@@ -12,6 +12,8 @@ from pandas import Series
 
 from .base import TabularMLAlgo
 from .tuning.optuna import OptunaTunableMixin
+from .utils import find_baseline
+
 from ..dataset.np_pd_dataset import NumpyDataset, CSRSparseDataset, PandasDataset
 from ..pipelines.selection.base import ImportanceEstimator
 from ..pipelines.utils import get_columns_by_role
@@ -48,20 +50,20 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         "learning_rate": 0.03,
         "l2_leaf_reg": 1e-2,
         "bootstrap_type": "Bernoulli",
-        # "bagging_temperature": 1,
         "grow_policy": "SymmetricTree",
-        "max_depth": 5,
+        "max_depth": 5,`
         "min_data_in_leaf": 1,
         "one_hot_max_size": 10,
         "fold_permutation_block": 1,
         "boosting_type": "Plain",
-        "boost_from_average": True,
+        "boost_from_average": False,
         "od_type": "Iter",
         "od_wait": 100,
         "max_bin": 32,
         "feature_border_type": "GreedyLogSum",
+        "counter_calc_method": "SkipTest",
+        "final_ctr_computation_mode": "Skip",
         "nan_mode": "Min",
-        # "silent": False,
         "verbose": False
     }
 
@@ -92,7 +94,7 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         feval = loss.metric_name
 
         if fobj not in ['RMSE', 'LogLoss', 'CrossEntropy', 'Quantile', 'MAE', 'MAPE']:
-            params.pop('boost_from_average')
+            params['boost_from_average'] = False
 
         # TODO: what if parameter of metric occurs in list of parameters of loss -> intersection...
 
@@ -113,6 +115,21 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         dataset = train_valid_iterator.train
         self.task = train_valid_iterator.train.task
 
+        suggested_params = copy(self.default_params)
+
+        try:
+            self._base_value = getattr(self, '_base_value')
+        except AttributeError:
+            if suggested_params['boost_from_average']:
+                self._base_value = None
+            else:
+                self._base_value = find_baseline(
+                    dataset.target, dataset.weights,
+                    self.task.loss_func,
+                    self.task.name,
+                    self.task.losses['cb']._fw_func
+                )
+
         if train_valid_iterator.train.dataset_type != 'CSRSparseDataset':
             self._nan_rate = train_valid_iterator.train.to_pandas().nan_rate()
 
@@ -125,8 +142,6 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
             self._text_features = getattr(self, '_text_features')
         except AttributeError:
             self._text_features = get_columns_by_role(dataset, 'Text')
-
-        suggested_params = copy(self.default_params)
 
         if self.freeze_defaults:
             return suggested_params
@@ -285,13 +300,19 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         else:
             target, weights = dataset.target, dataset.weights
 
+        if self.params['boost_from_average']:
+            baseline = None
+        else:
+            baseline = np.full(data.shape[0], self._base_value)
+
         pool = cb.Pool(
             data,
             label=target,
             weight=weights,
             feature_names=dataset.features,
             cat_features=self._le_cat_features,
-            text_features=self._text_features
+            text_features=self._text_features,
+            baseline=baseline
         )
 
         return pool
@@ -355,8 +376,11 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         assert self.is_fitted, 'Model must be fitted to compute importance.'
         imp = 0
         for model in self.models:
-            imp = imp + model.get_feature_importance(type='FeatureImportance', prettified=False,
-                                                     thread_count=self.params['thread_count'])
+            imp = imp + model.get_feature_importance(
+                type='FeatureImportance',
+                prettified=False,
+                thread_count=self.params['thread_count']
+            )
 
         imp = imp / len(self.models)
 

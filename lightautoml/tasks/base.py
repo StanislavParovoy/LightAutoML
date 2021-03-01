@@ -8,7 +8,8 @@ import numpy as np
 from log_calls import record_history
 
 from lightautoml.tasks.losses import LGBLoss, SKLoss, TORCHLoss, CBLoss
-from .common_metric import _valid_str_metric_names, _valid_metric_args
+from .common_metric import _valid_str_metric_names, _valid_metric_args, \
+    LossFromMetric
 from .utils import infer_gib, infer_gib_multiclass
 from ..utils.logging import get_logger
 
@@ -338,6 +339,8 @@ class Task:
                 # self.losses[loss_key] = loss_factory(loss, loss_params=loss_params)
 
             assert len(self.losses) > 0, 'None of frameworks supports {0} loss.'.format(loss)
+
+            self.loss_func = LossFromMetric(self.name, loss, loss_params=loss_params)
 
         elif type(loss) is dict:
             # case - dict passed directly

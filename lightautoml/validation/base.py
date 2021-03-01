@@ -49,6 +49,20 @@ class TrainValidIterator:
         for k in kwargs:
             self.__dict__[k] = kwargs[k]
 
+    @property
+    def train(self) -> LAMLDataset:
+        """Train dataset.
+
+        Returns:
+            Train dataset.
+
+        """
+        return self._train
+
+    @train.setter
+    def train(self, value):
+        self._train = value
+
     def __iter__(self) -> Iterable:
         """ Abstract method. Creates iterator."""
         raise NotImplementedError

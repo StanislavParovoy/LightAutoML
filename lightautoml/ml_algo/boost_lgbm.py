@@ -9,9 +9,11 @@ import numpy as np
 from log_calls import record_history
 from optuna.trial import Trial
 from pandas import Series
+from scipy.special import expit
 
 from .base import TabularMLAlgo, TabularDataset
 from .tuning.optuna import OptunaTunableMixin
+from .utils import find_baseline
 from ..pipelines.selection.base import ImportanceEstimator
 from ..utils.logging import get_logger
 from ..validation.base import TrainValidIterator
@@ -55,6 +57,7 @@ class BoostLGBM(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         'min_data_in_bin': 3,
         'num_trees': 3000,
         'early_stopping_rounds': 100,
+        'boost_from_average': True,
         'random_state': 42
     }
 
@@ -93,6 +96,11 @@ class BoostLGBM(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         params['num_class'] = self.n_classes
         # add loss and tasks params if defined
         params = {**params, **loss.fobj_params, **loss.metric_params}
+        LGB_BOOSTED_LOSSES = ['regression', 'rmse', 'mse',
+                              'binary', 'multiclassova', 'multiclass',
+                              'cross_entropy']
+        if params['objective'] not in LGB_BOOSTED_LOSSES:
+            params['boost_from_average'] = False
 
         return params, num_trees, early_stopping_rounds, verbose_eval, fobj, feval
 
@@ -109,11 +117,26 @@ class BoostLGBM(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
 
         # TODO: use features_num
         # features_num = len(train_valid_iterator.features())
-
         rows_num = len(train_valid_iterator.train)
-        task = train_valid_iterator.train.task.name
+        self.task = train_valid_iterator.train.task
+        task = self.task.name
+        dataset = train_valid_iterator.train
 
         suggested_params = copy(self.default_params)
+
+
+        try:
+            self._base_value = getattr(self, '_base_value')
+        except AttributeError:
+            if suggested_params['boost_from_average']:
+                self._base_value = None
+            else:
+                self._base_value = find_baseline(
+                    dataset.target, dataset.weights,
+                    self.task.loss_func,
+                    self.task.name,
+                    self.task.losses['lgb']._fw_func
+                )
 
         if self.freeze_defaults:
             # if user change defaults manually - keep it
@@ -249,14 +272,26 @@ class BoostLGBM(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         train_target, train_weight = self.task.losses['lgb'].fw_func(train.target, train.weights)
         valid_target, valid_weight = self.task.losses['lgb'].fw_func(valid.target, valid.weights)
 
-        lgb_train = lgb.Dataset(train.data, label=train_target, weight=train_weight)
-        lgb_valid = lgb.Dataset(valid.data, label=valid_target, weight=valid_weight)
+        if self._base_value is None:
+            base_train = None
+            base_valid = None
+        else:
+            base_train = np.full_like(train_target, self._base_value)
+            base_valid = np.full_like(valid_target, self._base_value)
 
-        model = lgb.train(params, lgb_train, num_boost_round=num_trees, valid_sets=[lgb_valid], valid_names=['valid'],
-                          fobj=fobj, feval=feval, early_stopping_rounds=early_stopping_rounds, verbose_eval=verbose_eval
-                          )
-        val_pred = model.predict(valid.data)
-        val_pred = self.task.losses['lgb'].bw_func(val_pred)
+        lgb_train = lgb.Dataset(train.data, label=train_target,
+                                weight=train_weight, init_score=base_train)
+        lgb_valid = lgb.Dataset(valid.data, label=valid_target,
+                                weight=valid_weight, init_score=base_valid,
+                                reference=lgb_train)
+
+        model = lgb.train(params, lgb_train, num_boost_round=num_trees,
+                          valid_sets=[lgb_valid], valid_names=['valid'],
+                          fobj=fobj, feval=feval,
+                          early_stopping_rounds=early_stopping_rounds,
+                          verbose_eval=verbose_eval)
+
+        val_pred = self._predict(model, valid.data)
 
         return model, val_pred
 
@@ -299,3 +334,14 @@ class BoostLGBM(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
 
         """
         self.fit_predict(train_valid)
+
+    def _predict(self, model: lgb.Booster, dataset: TabularDataset):
+        if self.task.name == 'multiclass' or self._base_value is None:
+            pred = model.predict(dataset.data)
+        else:
+            pred = model.predict(dataset.data, raw_score=True) \
+                   + self._base_value
+            if self.task.name == 'binary':
+                pred = expit(pred)
+        pred = self.task.losses['lgb'].bw_func(pred)
+        return pred

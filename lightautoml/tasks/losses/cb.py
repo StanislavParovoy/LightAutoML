@@ -29,6 +29,7 @@ def fw_rmsle(x, y): return np.log1p(x), y
 
 _cb_loss_mapping = {
     'mse': ('RMSE', None, None),
+    'rmse': ('RMSE', None, None),
     'mae': ('MAE', None, None),
     'logloss': ('Logloss', None, None),
     'rmsle': ('RMSE', fw_rmsle, np.expm1),
@@ -59,6 +60,7 @@ _cb_binary_metrics_dict = {
 
 _cb_reg_metrics_dict = {
     'mse': 'RMSE',
+    'rmse': 'RMSE',
     'mae': 'MAE',
     'r2': 'R2',
     'rmsle': 'MSLE',

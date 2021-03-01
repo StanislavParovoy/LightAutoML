@@ -1,7 +1,7 @@
 """Bunch of metrics with unified interface."""
 
 from functools import partial
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict
 
 import numpy as np
 from log_calls import record_history
@@ -312,6 +312,7 @@ _valid_str_binary_metric_names = {
 _valid_str_reg_metric_names = {
     'r2': r2_score,
     'mse': mean_squared_error,
+    'rmse': partial(mean_squared_error, squared=False),
     'mae': mean_absolute_error,
     'rmsle': rmsle,
     'fair': mean_fair_error,
@@ -341,3 +342,18 @@ _valid_metric_args = {
     'huber': ['a'],
     'fair': ['c']
 }
+
+
+class LossFromMetric:
+    """Wrapper for scikit-like metric loss function."""
+    def __init__(self, task_name: str, loss_name: str, loss_params: Optional[Dict] = None):
+        assert loss_name in _valid_str_metric_names[task_name]
+        self.loss = _valid_str_metric_names[task_name][loss_name]
+
+        if loss_params is None:
+            loss_params = {}
+        self.loss_params = loss_params
+
+    def __call__(self, y_true: np.ndarray, y_pred: np.ndarray, sample_weight: Optional[np.ndarray] = None):
+        ans = self.loss(y_true, y_pred, sample_weight=sample_weight, **self.loss_params)
+        return ans

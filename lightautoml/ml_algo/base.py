@@ -219,7 +219,8 @@ class TabularMLAlgo(MLAlgo):
         # init params on input if no params was set before
         if self._params is None:
             self.params = self.init_params_on_input(train_valid_iterator)
-
+        else:
+            self.params = {**self.init_params_on_input(train_valid_iterator), **self._params}
         # save features names
         self._features = train_valid_iterator.features
         # get metric and loss if None
