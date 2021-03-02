@@ -195,9 +195,22 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
                 ntrees = 3000
 
         elif self.task.name == 'reg':
-            init_lr = 0.05
-            ntrees = 2000
+            init_lr = 0.03
+            ntrees = 4000
             es = 300
+            
+            if row_num <= 2000:
+                ntrees = 2000
+                init_lr = 0.001
+                es = 200
+            elif row_num <= 10000:
+                ntress = 2000
+                init_lr = 0.03
+                es = 200
+            elif row_num <= 100000:
+                ntrees = 3000
+                init_lr = 0.03
+                es = 300
 
         suggested_params['learning_rate'] = init_lr
         suggested_params['num_trees'] = ntrees
