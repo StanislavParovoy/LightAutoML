@@ -51,7 +51,7 @@ class BoostCB(OptunaTunableMixin, TabularMLAlgo, ImportanceEstimator):
         "l2_leaf_reg": 1e-2,
         "bootstrap_type": "Bernoulli",
         "grow_policy": "SymmetricTree",
-        "max_depth": 5,`
+        "max_depth": 5,
         "min_data_in_leaf": 1,
         "one_hot_max_size": 10,
         "fold_permutation_block": 1,
